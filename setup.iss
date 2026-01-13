@@ -1,9 +1,8 @@
 #define AppName "Java Dev Environment (OpenJDK 25 + Maven 3.x)"
 #define AppVersion "1.0"
 
-; --- EDIT THESE 3 LINES ---
+; --- EDIT THESE 2 LINES ---
 #define JdkMsi "OpenJDK25U-jdk_x64_windows_hotspot_25.0.1_8.msi"
-#define MavenZip "apache-maven-3.9.12.zip"
 #define MavenDirName "apache-maven-3.9.12"
 ; --------------------------
 
@@ -21,25 +20,16 @@ ArchitecturesAllowed=x64
 ArchitecturesInstallIn64BitMode=x64
 
 [Files]
+; JDK MSI to temp
 Source: "{#JdkMsi}"; DestDir: "{tmp}"; Flags: deleteafterinstall
-Source: "{#MavenZip}"; DestDir: "{tmp}"; Flags: deleteafterinstall
+
+; Maven folder (uncompressed) copied into {app}\maven
+; This copies the CONTENTS of apache-maven-3.9.12\... into {app}\maven\...
+Source: "{#MavenDirName}\*"; DestDir: "{app}\maven"; Flags: recursesubdirs createallsubdirs
 
 [Run]
-; 1) Install OpenJDK silently
-Filename: "msiexec.exe"; \
-  Parameters: "/i ""{tmp}\{#JdkMsi}"" /qn /norestart"; \
-  Flags: waituntilterminated
-
-; 2) Create target dir + unzip Maven
-Filename: "powershell.exe"; \
-  Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""New-Item -ItemType Directory -Force -Path """"{app}\maven"""" | Out-Null; Expand-Archive -Force """"{tmp}\{#MavenZip}"""" """"{app}\maven"""""""; \
-  Flags: waituntilterminated runhidden
-
-; 3) Flatten apache-maven-3.x.y\* -> {app}\maven\*
-Filename: "powershell.exe"; \
-  Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""if (Test-Path """"{app}\maven\{#MavenDirName}\bin\mvn.cmd"""") {{ Move-Item -Force """"{app}\maven\{#MavenDirName}\*"""" """"{app}\maven\""""; Remove-Item -Force -Recurse """"{app}\maven\{#MavenDirName}"""" }} else {{ exit 5 }}"""; \
-  Flags: waituntilterminated runhidden
-
+; Install OpenJDK silently
+Filename: "msiexec.exe"; Parameters: "/i ""{tmp}\{#JdkMsi}"" /qn /norestart"; Flags: waituntilterminated
 
 [Code]
 const
@@ -116,7 +106,6 @@ var
 begin
   S := Uppercase(DisplayName);
 
-  // match typical Adoptium/Temurin naming
   Result :=
     ((Pos('ECLIPSE', S) > 0) or (Pos('ADOPTIUM', S) > 0) or (Pos('TEMURIN', S) > 0)) and
     (Pos('JDK', S) > 0) and
@@ -181,10 +170,13 @@ begin
   begin
     MavenTarget := ExpandConstant('{app}\maven');
 
-    // Verify Maven actually installed (flattened)
+    // Verify Maven exists
     if not FileExists(MavenTarget + '\bin\mvn.cmd') then
-      MsgBox('Maven did not install correctly. Missing: ' + MavenTarget + '\bin\mvn.cmd' + #13#10 +
-             'Check MavenDirName and the ZIP contents.', mbError, MB_OK);
+      MsgBox(
+        'Maven did not install correctly. Missing: ' + MavenTarget + '\bin\mvn.cmd' + #13#10 +
+        'Make sure the Maven folder "' + ExpandConstant('{src}\{#MavenDirName}') + '" exists next to setup.iss when compiling.',
+        mbError, MB_OK
+      );
 
     // Set Maven env vars + PATH
     SetSystemEnv('MAVEN_HOME', MavenTarget);
